@@ -1,18 +1,12 @@
 ---
 name: topic-to-book
 description: >-
-  Turn a topic and a goal into an interactive, paginated study book: a single self-contained HTML
-  file with theory taught from first principles, hand-drawn SVG figures, a practice sheet after
-  every chapter, follow-up ladders showing how interviewers drill down, annotated mock rounds,
-  flashcards, a self-scoring examination, and a readiness page that tracks what the reader has
-  actually mastered. Researched twice over: the technical material from primary sources, and the
-  interview reality from how people are really questioned on that topic. Between 50 and 300 pages
-  depending on the topic's breadth. Use this whenever someone wants to prepare for an interview
-  on a subject, be grilled or quizzed on a topic, study something properly, or asks for a book,
-  guide, handbook, primer, course, curriculum, question bank, practice sheets, revision material,
-  cheat sheet, or "teach me X so I can pass the interview" about any subject rather than a
-  specific codebase. Use it even if they never say the word "book". For a book about one
-  particular repository, use repo-to-book instead.
+  Turn a topic and a goal into a self-contained, interactive HTML study book with first-principles
+  theory, SVG figures, practice sheets, interview follow-up ladders, mock rounds, flashcards, an
+  examination, and readiness tracking. Research both the technical material and how the topic is
+  actually assessed. Use for interview preparation, deep study, quizzes, courses, curricula,
+  question banks, revision guides, cheat sheets, or requests to learn a subject thoroughly. Do not
+  use for documentation about one specific codebase; use a repository-focused workflow instead.
 ---
 
 # Topic to Book

@@ -131,6 +131,8 @@ def main() -> None:
             print(f"  ! {f.name} contains no <section class=\"page\">, skipped")
             continue
         pages.extend((blk, f) for blk in found)
+    if not pages:
+        sys.exit('no <section class="page"> blocks found in the supplied fragments')
 
     # give every contents-bound page an id, then number the pages
     entries: list[dict] = []
@@ -194,8 +196,9 @@ def main() -> None:
         out_html = re.sub(r"<title>.*?</title>", f"<title>{html.escape(args.title)}</title>",
                           out_html, count=1, flags=re.S)
     if args.book_id:
+        book_id = html.escape(args.book_id, quote=True)
         out_html = re.sub(r'(<div class="book" id="book" data-book-id=")[^"]*(")',
-                          rf"\g<1>{args.book_id}\g<2>", out_html, count=1)
+                          lambda m: m.group(1) + book_id + m.group(2), out_html, count=1)
 
     out = pathlib.Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
