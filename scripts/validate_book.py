@@ -63,10 +63,36 @@ class Balance(HTMLParser):
 
 
 def is_greyscale(hex_colour: str) -> bool:
-    r = int(hex_colour[1:3], 16)
-    g = int(hex_colour[3:5], 16)
-    b = int(hex_colour[5:7], 16)
+    value = hex_colour[1:]
+    if len(value) in (3, 4):
+        r, g, b = (int(c * 2, 16) for c in value[:3])
+    else:
+        r, g, b = (int(value[i:i + 2], 16) for i in (0, 2, 4))
     return r == g == b
+
+
+def css_function_is_greyscale(function: str) -> bool:
+    """Return whether an rgb()/hsl() colour has no chroma; ignore its alpha channel."""
+    name, body = function.split("(", 1)
+    body = body[:-1].split("/", 1)[0]
+    parts = [p for p in re.split(r"\s*,\s*|\s+", body.strip()) if p]
+    try:
+        if name.lower().startswith("rgb"):
+            if len(parts) < 3:
+                return False
+
+            def channel(value: str) -> float:
+                return float(value[:-1]) * 2.55 if value.endswith("%") else float(value)
+
+            r, g, b = (channel(value) for value in parts[:3])
+            return abs(r - g) < 1e-6 and abs(g - b) < 1e-6
+        if name.lower().startswith("hsl"):
+            if len(parts) < 3 or not parts[1].endswith("%"):
+                return False
+            return abs(float(parts[1][:-1])) < 1e-6
+    except ValueError:
+        return False
+    return False
 
 
 def main() -> None:
@@ -101,7 +127,7 @@ def main() -> None:
         hard.append("unclosed at EOF: " + ", ".join(f"<{t}> line {ln}" for t, ln in parser.stack))
 
     # --- pages ---
-    page_tags = re.findall(r'<section[^>]*class="page[^"]*"[^>]*>', text)
+    page_tags = re.findall(r'<section[^>]*class="[^"]*\bpage\b[^"]*"[^>]*>', text)
     ids = [re.search(r'id="([^"]+)"', t).group(1) if 'id="' in t else None for t in page_tags]
     notes.append(f"pages: {len(page_tags)}")
     if len(page_tags) < args.min_pages:
@@ -145,15 +171,17 @@ def main() -> None:
 
     # --- greyscale ---
     if not args.allow_colour:
-        hexes = sorted(set(re.findall(r"#[0-9a-fA-F]{6}\b", text)))
+        hexes = sorted(set(re.findall(r"(?<!&)#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|"
+                                     r"[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b", text)))
         coloured = [h for h in hexes if not is_greyscale(h)]
+        functions = re.findall(r"\b(?:rgb|hsl)a?\([^)]*\)", text, re.I)
+        coloured_functions = [f for f in functions if not css_function_is_greyscale(f)]
         if coloured:
             hard.append("non-greyscale colours: " + ", ".join(coloured))
-        else:
+        if coloured_functions:
+            hard.append("non-greyscale functional colours: " + ", ".join(coloured_functions))
+        if not coloured and not coloured_functions:
             notes.append(f"palette: {len(hexes)} colours, all greyscale")
-        loud = re.findall(r"\b(?:rgb|hsl)a?\([^)]*\)", text)
-        if loud:
-            soft.append(f"{len(loud)} rgb()/hsl() value(s): check they are greyscale too")
 
     # --- contents page vs actual page order ---
     folio = {pid: i + 1 for i, pid in enumerate(ids) if pid}
@@ -176,7 +204,7 @@ def main() -> None:
     # --- chapters and their practice sheets ---
     # Every chapter should end in work the reader does. A chapter with no graded question and no
     # open drill is the failure mode this whole format exists to prevent.
-    page_blocks = re.findall(r'<section[^>]*class="page.*?</section>', text, re.S)
+    page_blocks = re.findall(r'<section[^>]*class="[^"]*\bpage\b[^"]*".*?</section>', text, re.S)
     chapters: dict[str, dict[str, int]] = {}
     for block in page_blocks:
         m = re.search(r'data-ch="([^"]+)"', block)

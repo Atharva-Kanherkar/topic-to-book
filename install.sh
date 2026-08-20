@@ -43,7 +43,11 @@ done
 
 # --- find the source tree: this checkout, or a shallow clone ---
 SRC=""
-here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+script_path="${BASH_SOURCE[0]:-}"
+here=""
+if [ -n "$script_path" ] && [ -f "$script_path" ]; then
+  here="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd || true)"
+fi
 if [ -n "$here" ] && [ -f "$here/SKILL.md" ] && [ -d "$here/assets" ]; then
   SRC="$here"
 else
