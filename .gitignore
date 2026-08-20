@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+shots/
+_shot_*.html
+.DS_Store

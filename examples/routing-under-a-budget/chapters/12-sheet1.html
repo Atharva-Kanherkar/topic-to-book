@@ -1,0 +1,80 @@
+<section class="page" data-ch="One &middot; What a router decides" data-toc="Practice sheet one">
+  <div class="rh"><span>Practice sheet one</span><span>Chapter one</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Practice sheet one</span>What a router decides</h2>
+    <form class="quiz">
+      <ol class="qs">
+        <li class="q" data-answer="c">
+          <p class="qt">A router sends 80% of traffic to a small model and escalates rejected
+            answers to a large one. Average cost falls 60%. What has certainly risen?<span class="verdict"></span></p>
+          <label><input type="radio" name="s1q1" value="a" /><span>Error rate on the escalated requests</span></label>
+          <label><input type="radio" name="s1q1" value="b" /><span>Throughput of the large model</span></label>
+          <label><input type="radio" name="s1q1" value="c" /><span>Tail latency of the escalated requests</span></label>
+          <div class="why"><strong>c.</strong> An escalated request pays for both attempts, so its
+            latency is the sum plus the judge. Answer a is tempting because escalation implies a
+            rejection, but a rejected first answer is not an error delivered to the caller; b moves
+            in the opposite direction.</div>
+        </li>
+        <li class="q" data-answer="a">
+          <p class="qt">Which signal is available to the router <em>before</em> any model
+            runs?<span class="verdict"></span></p>
+          <label><input type="radio" name="s1q2" value="a" /><span>Prompt length and structure</span></label>
+          <label><input type="radio" name="s1q2" value="b" /><span>Judge score of the draft answer</span></label>
+          <label><input type="radio" name="s1q2" value="c" /><span>Token count of the response</span></label>
+          <div class="why"><strong>a.</strong> Only properties of the input exist before
+            inference. Both b and c describe the output, which is why cascades pay for a first
+            attempt to obtain them &mdash; and why interviewers ask you to distinguish a classifier
+            from a cascade.</div>
+        </li>
+        <li class="q" data-answer="b">
+          <p class="qt">The estimator itself is a model. What does that add to every
+            request?<span class="verdict"></span></p>
+          <label><input type="radio" name="s1q3" value="a" /><span>Nothing measurable</span></label>
+          <label><input type="radio" name="s1q3" value="b" /><span>A fixed latency and cost floor</span></label>
+          <label><input type="radio" name="s1q3" value="c" /><span>Only cost, never latency</span></label>
+          <div class="why"><strong>b.</strong> Every request pays the estimator, including the ones
+            that would have been cheap anyway. That floor is the reason very small routers are
+            heuristics rather than models.</div>
+        </li>
+      </ol>
+      <div class="quiz-bar">
+        <button type="button" class="qbtn" data-action="check">Grade</button>
+        <button type="button" class="qbtn" data-action="reset">Clear</button>
+        <span class="score"></span>
+      </div>
+    </form>
+    <div class="drill" style="margin-top:1.2rem">
+      <span class="lab">Out loud, from memory</span>
+      <div class="fr" data-id="s1-fr1">
+        <p class="prompt"><span class="tag">60 sec</span><span>Explain the difference between a
+          router and a cascade to someone who has built neither.</span></p>
+        <details><summary>Model answer</summary>
+          <div class="answer">
+            <p>A router decides once, from the input, and commits. A cascade decides twice: it
+              tries cheap, judges the result, and escalates on failure. The router pays the
+              estimator on every request; the cascade pays the whole first attempt on the requests
+              it escalates.</p>
+            <p><em>Marked down for:</em> not naming who pays. The cost model is the answer.</p>
+          </div></details>
+        <div class="rate"><span class="lab">Rate yourself</span>
+          <button type="button" class="rbtn" data-rate="miss">missed</button>
+          <button type="button" class="rbtn" data-rate="shaky">shaky</button>
+          <button type="button" class="rbtn" data-rate="solid">solid</button>
+        </div>
+      </div>
+      <div class="fr" data-id="s1-fr2">
+        <p class="prompt"><span class="tag">draw</span><span>Reproduce figure 1.1, then say what
+          the dashed edge costs.</span></p>
+        <details><summary>What must be in the drawing</summary>
+          <div class="answer"><p>Request, estimator, two models, and the return edge. If the
+            return edge is missing you have drawn a classifier; if it is solid you have implied
+            every request escalates.</p></div></details>
+        <div class="rate"><span class="lab">Rate yourself</span>
+          <button type="button" class="rbtn" data-rate="miss">missed</button>
+          <button type="button" class="rbtn" data-rate="shaky">shaky</button>
+          <button type="button" class="rbtn" data-rate="solid">solid</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

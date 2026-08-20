@@ -1,0 +1,84 @@
+<section class="page part" data-part="Part II &middot; How you will be grilled">
+  <div class="leaf">
+    <div class="rule-long"></div>
+    <p class="part-num">Part two</p>
+    <h2 class="part-title">How you will<br />be grilled</h2>
+    <p class="part-gloss">The openings that recur, where they go next, and what each level of
+      answer sounds like.</p>
+  </div>
+</section>
+
+<section class="page" data-ch="Two &middot; Follow-up ladders" data-toc="Follow-up ladders" data-toc-n="02">
+  <div class="rh"><span>Two &middot; Follow-up ladders</span><span>Cost first</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Chapter two</span>The ladder they climb</h2>
+    <p>Nobody asks one question. They ask one, then follow your answer down. Each rung below is an
+      opening that recurs, with what the three grades of answer sound like.</p>
+    <div class="ladder">
+      <div class="step">
+        <p class="ask"><b>They open with</b>&ldquo;We are spending too much on inference. Where do
+          you start?&rdquo;</p>
+        <dl>
+          <dt>weak</dt><dd>Proposes a smaller model.</dd>
+          <dt>solid</dt><dd>Asks for the request mix first, then proposes routing the head of the
+            distribution.</dd>
+          <dt>strong</dt><dd class="strong">Asks for the mix, names the quality metric that must
+            not regress, and proposes measuring escalation rate before committing to a policy.</dd>
+        </dl>
+      </div>
+      <div class="step">
+        <p class="ask"><b>Then</b>&ldquo;Your router is right 90% of the time. Is that good?&rdquo;</p>
+        <dl>
+          <dt>weak</dt><dd>Says yes, or says it depends without saying on what.</dd>
+          <dt>strong</dt><dd class="strong">Splits the 10%: down-routing a hard request costs
+            quality, up-routing an easy one costs money, and the two errors are not
+            interchangeable.</dd>
+        </dl>
+      </div>
+      <div class="step">
+        <p class="ask"><b>Then</b>&ldquo;The large model starts timing out. What happens?&rdquo;</p>
+        <dl>
+          <dt>strong</dt><dd class="strong">Escalations queue behind the outage, so the cascade
+            turns a quality problem into a latency problem. Names the mitigation: cap escalation
+            concurrency and serve the draft answer.</dd>
+        </dl>
+      </div>
+    </div>
+    <p class="cap"><b>Note</b> Illustrative rungs for the shell demo. In a real book each rung
+      carries its source and date.</p>
+  </div>
+</section>
+
+<section class="page w" data-ch="Three &middot; A mock round" data-toc="A mock round, annotated" data-toc-n="03">
+  <div class="rh"><span>Three &middot; A mock round</span><span>Forty-five minutes</span></div>
+  <div class="leaf wide">
+    <h2 class="ch-title"><span class="cn">Chapter three</span>A mock round, annotated</h2>
+    <div class="timer" data-min="45">
+      <button type="button" class="qbtn" data-timer="start">Start</button>
+      <button type="button" class="qbtn" data-timer="reset">Reset</button>
+      <span class="clock">45:00</span>
+      <span class="what">read the prompt, close the book,<br />talk for the clock</span>
+    </div>
+    <div class="dlg">
+      <div class="turn"><span class="who">them</span><div>
+        <p class="said">&ldquo;We serve 40 million assistant requests a day on one large model.
+          Finance wants the bill halved. Design it.&rdquo;</p></div></div>
+      <div class="turn you"><span class="who">you</span><div>
+        <p class="said">&ldquo;Before I design anything: what is the request mix, and what quality
+          metric are you already tracking? Halving the bill is easy if I am allowed to regress
+          quality, so I need to know what I am not allowed to move.&rdquo;</p>
+        <p class="note"><b>why</b> Two questions, both of which change the design. Asking them
+          first is what turns the next forty minutes into a conversation.</p></div></div>
+      <div class="turn"><span class="who">them</span><div>
+        <p class="said">&ldquo;Assume 70% short lookups, 30% long reasoning. We track a thumbs-down
+          rate of 4%. It must not exceed 5%.&rdquo;</p></div></div>
+      <div class="turn you"><span class="who">you</span><div>
+        <p class="said">&ldquo;Then the 70% is the target. I would route on input features first,
+          measure how often the small model's answer is rejected offline, and only build the
+          escalation path once I know that rate &mdash; because if it is 30% the cascade costs more
+          than the model it replaced.&rdquo;</p>
+        <p class="note"><b>watch</b> The moment candidates go quiet and start drawing. Narrate
+          while you draw: a silent whiteboard reads as a stall.</p></div></div>
+    </div>
+  </div>
+</section>

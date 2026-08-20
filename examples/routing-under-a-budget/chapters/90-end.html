@@ -1,0 +1,118 @@
+<section class="page w" data-part="Appendices" data-toc="Flashcards" data-toc-n="A">
+  <div class="rh"><span>Appendix A &middot; Flashcards</span><span>Recall</span></div>
+  <div class="leaf wide">
+    <h2 class="ch-title"><span class="cn">Appendix A</span>Flashcards</h2>
+    <p class="small">Click a card to turn it. Mark what you knew; the count and the readiness page
+      remember.</p>
+    <ol class="deck">
+      <li class="card" data-id="c-router-vs-lb">
+        <button type="button" class="face">Router versus load balancer, in one sentence</button>
+        <div class="back">A load balancer assumes backends are interchangeable and optimizes
+          utilization; a router assumes they are not and optimizes quality per unit cost.</div>
+        <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+      </li>
+      <li class="card" data-id="c-cascade">
+        <button type="button" class="face">What makes a design a cascade rather than a router?</button>
+        <div class="back">It decides twice: a cheap attempt, a judge, then escalation on
+          rejection.</div>
+        <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+      </li>
+      <li class="card" data-id="c-two-errors">
+        <button type="button" class="face">The two routing errors, and why they differ</button>
+        <div class="back">Down-routing a hard request costs quality; up-routing an easy one costs
+          money. Only one of them is visible to the user.</div>
+        <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+      </li>
+      <li class="card" data-id="c-floor">
+        <button type="button" class="face">Why the estimator is a floor</button>
+        <div class="back">Every request pays it, including those that needed no routing at all.</div>
+        <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+      </li>
+    </ol>
+    <div class="deck-bar">
+      <button type="button" class="qbtn" data-deck="flip">Turn all</button>
+      <button type="button" class="qbtn" data-deck="clear">Unmark all</button>
+      <span class="score" data-deck-score></span>
+    </div>
+  </div>
+</section>
+
+<section class="page" data-ch="Final examination" data-toc="Final examination" data-toc-n="B">
+  <div class="rh"><span>Appendix B &middot; Final examination</span><span>Part one</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Appendix B</span>Final examination</h2>
+    <p class="small">Answer, then grade. Each explanation says why the distractor was tempting.</p>
+    <form class="quiz">
+      <ol class="qs">
+        <li class="q" data-answer="b">
+          <p class="qt">A cascade escalates 30% of requests. The small model costs a tenth of the
+            large one. What is the approximate saving?<span class="verdict"></span></p>
+          <label><input type="radio" name="x1" value="a" /><span>About 70%</span></label>
+          <label><input type="radio" name="x1" value="b" /><span>About 60%</span></label>
+          <label><input type="radio" name="x1" value="c" /><span>About 90%</span></label>
+          <label><input type="radio" name="x1" value="d" /><span>None: escalation cancels it</span></label>
+          <div class="why"><strong>b.</strong> Every request pays the small model (0.1), and 30%
+            also pay the large one (0.3), so 0.4 of the original. Answer a is what you get by
+            forgetting that escalated requests pay twice; c ignores escalation entirely.</div>
+        </li>
+        <li class="q" data-answer="c">
+          <p class="qt">Which change makes a routing policy harder to evaluate offline?<span class="verdict"></span></p>
+          <label><input type="radio" name="x2" value="a" /><span>Adding a third model tier</span></label>
+          <label><input type="radio" name="x2" value="b" /><span>Raising the escalation threshold</span></label>
+          <label><input type="radio" name="x2" value="c" /><span>Routing on conversation history</span></label>
+          <div class="why"><strong>c.</strong> Once the decision depends on state the policy itself
+            produced, replaying a logged trace no longer reproduces the decision. a and b are both
+            evaluable on the same logs.</div>
+        </li>
+      </ol>
+      <div class="quiz-bar">
+        <button type="button" class="qbtn" data-action="check">Grade this page</button>
+        <button type="button" class="qbtn" data-action="reset">Clear</button>
+        <span class="score"></span>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="page" data-toc="Answer key" data-toc-n="C">
+  <div class="rh"><span>Appendix C &middot; Answer key</span><span>End matter</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Appendix C</span>Answer key</h2>
+    <p class="small">For anyone working on paper. Full explanations appear on the sheets when you
+      grade them.</p>
+    <div class="key" id="answer-key"></div>
+    <p class="cap" style="margin-top:1.2rem"><b>Note</b> Generated from the questions themselves,
+      so it cannot drift out of sync with them.</p>
+  </div>
+</section>
+
+<section class="page" data-toc="Readiness" data-toc-n="D">
+  <div class="rh"><span>Appendix D &middot; Readiness</span><span>End matter</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Appendix D</span>Readiness</h2>
+    <p class="small">Built from what you have graded and rated in this browser. Nothing leaves this
+      page.</p>
+    <div class="meter" id="readiness"></div>
+    <div class="quiz-bar">
+      <button type="button" class="qbtn" id="progress-reset">Clear all progress</button>
+      <span class="score" id="progress-note"></span>
+    </div>
+  </div>
+</section>
+
+<section class="page" data-toc="Sources">
+  <div class="rh"><span>Sources</span><span>End matter</span></div>
+  <div class="leaf">
+    <h2 class="ch-title">Sources</h2>
+    <p class="lede">This file is a shell demonstration, not a researched book.</p>
+    <p class="small">The technical content is illustrative: it is written to exercise every page
+      type and component in <code>assets/book-shell.html</code>, and the mechanisms described are
+      general rather than drawn from named systems.</p>
+    <p class="small">No interview loop, company process, rubric, or candidate account in this file
+      is sourced. The ladder rungs and the mock transcript are written as examples of the form. A
+      real book produced by this skill carries, on this page, where its theory came from with
+      dates, how many accounts each interview claim rests on, and which parts are inference.</p>
+    <p class="small" style="margin-top:1.4rem;color:var(--fg-3)">Rendered and validated with the
+      bundled scripts; the figure was checked in a screenshot.</p>
+  </div>
+</section>

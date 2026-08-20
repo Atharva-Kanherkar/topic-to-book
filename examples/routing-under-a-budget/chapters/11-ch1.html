@@ -1,0 +1,63 @@
+<section class="page" data-ch="One &middot; What a router decides" data-toc="What a router decides" data-toc-n="01">
+  <div class="rh"><span>One &middot; What a router decides</span><span>The decision</span></div>
+  <div class="leaf">
+    <h2 class="ch-title"><span class="cn">Chapter one</span>What a router decides</h2>
+    <p class="lede">A router exists because the cheapest model that can answer a request is
+      usually not the best model available, and you cannot tell which is which before answering.</p>
+    <h3 class="sub">The problem, stated as a budget</h3>
+    <p>Every request carries three quantities the operator cares about: what it costs to serve,
+      how long the caller waits, and how good the answer is. A single model fixes all three at
+      once. Routing is the decision to fix them per request instead, which means the router needs
+      an estimate of answer quality <em>before</em> the answer exists.</p>
+    <p>That impossibility is the whole subject. Every technique below is a way of buying a cheap
+      signal that correlates with quality: the shape of the prompt, its length, a small classifier,
+      a first attempt that a judge accepts or rejects.</p>
+    <div class="box trap">
+      <span class="lab">Trap</span>
+      <p>A router is not a load balancer. A load balancer assumes its backends are interchangeable
+        and optimizes for utilization; a router assumes they are <em>not</em> interchangeable and
+        optimizes for a quality-per-unit-cost target. Candidates who describe round robin have
+        answered a different question.</p>
+    </div>
+    <div class="drill">
+      <span class="lab">Check yourself</span>
+      <details><summary>Why can a router not simply always pick the strongest model?</summary>
+        <div class="answer"><p>Because cost and latency are part of the objective, not
+          constraints to satisfy afterwards. If the strongest model were free and instant, routing
+          would not exist as a discipline.</p></div></details>
+    </div>
+  </div>
+</section>
+
+<section class="page w" data-ch="One &middot; What a router decides">
+  <div class="rh"><span>One &middot; What a router decides</span><span>The shape of it</span></div>
+  <div class="leaf wide">
+    <h3 class="sub">The shape of it</h3>
+    <p>The figure below is the one to redraw when asked to describe a router. Four boxes, one
+      dashed return edge, and the emphasis on the estimator &mdash; because the estimator is where
+      every interesting failure lives.</p>
+    <figure>
+      <svg viewBox="0 0 600 210" role="img" aria-label="A request reaches an estimator, which is emphasized; the estimator sends the request either to a small model or a large model, and a dashed escalation edge returns from the small model back to the large one after a rejected answer.">
+        <rect x="16" y="88" width="96" height="38" class="fig-stroke" />
+        <text x="30" y="112" class="fig-text">request</text>
+        <path d="M112 107 L160 107" class="fig-stroke" /><path d="M154 103 L160 107 L154 111" class="fig-stroke" />
+        <rect x="160" y="88" width="120" height="38" class="fig-stroke" style="stroke-width:2" />
+        <text x="174" y="105" class="fig-text">estimator</text>
+        <text x="174" y="119" class="fig-text-sm">cheap signal</text>
+        <path d="M280 100 L340 62" class="fig-stroke" /><path d="M334 60 L340 62 L336 68" class="fig-stroke" />
+        <path d="M280 116 L340 152" class="fig-stroke" /><path d="M334 146 L340 152 L336 154" class="fig-stroke" />
+        <rect x="340" y="42" width="130" height="36" class="fig-stroke-thin" />
+        <text x="352" y="65" class="fig-text-sm">small model</text>
+        <rect x="340" y="134" width="130" height="36" class="fig-stroke-thin" />
+        <text x="352" y="157" class="fig-text-sm">large model</text>
+        <path d="M470 60 L520 60 L520 152 L470 152" class="fig-dash" />
+        <path d="M476 148 L470 152 L476 156" class="fig-dash" />
+        <text x="352" y="110" class="fig-text-sm">escalate on rejection</text>
+        <line x1="16" y1="186" x2="584" y2="186" class="fig-stroke-thin" />
+        <text x="16" y="202" class="fig-text-sm">the estimator spends latency to save cost; the escalation edge spends both to recover quality</text>
+      </svg>
+      <p class="cap"><b>Figure 1.1</b> Illustrative. The dashed edge is what makes the design a
+        cascade rather than a classifier, and interviewers ask which one you built.</p>
+    </figure>
+  </div>
+</section>

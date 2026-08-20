@@ -1,0 +1,1429 @@
+<title>REPLACE: Book Title</title>
+
+<!--
+  BOOK SHELL for the topic-to-book skill.
+
+  Copy this file (or let scripts/assemble_book.py splice chapter fragments into it) and replace
+  the demo pages. Everything above the first <section class="page"> and the <script> at the
+  bottom is reusable machinery: theme tokens for both grounds, horizontal paging, a self-scoring
+  quiz engine, free-response drills with persisted self-ratings, a flashcard deck, a countdown
+  timer for timed drills, a readiness meter computed from everything the reader has done, copy
+  buttons, and a jump palette.
+
+  PAGE TYPES
+    <section class="page">          normal 60ch measure
+    <section class="page w">        wide 78ch measure, for figures, tables, transcripts
+    <section class="page part">     part title page, vertically centred
+      <div class="rh">…</div>       running head: chapter left, section right
+      <div class="leaf">…</div>     content column ("leaf wide" inside a .page.w)
+
+  ATTRIBUTES THE MACHINERY READS
+    id="…"                          any page the contents links to
+    data-ch="Three · Load balancing"  marks a page as belonging to a chapter; the readiness
+                                      meter groups quiz scores and drill ratings by this string
+    data-book-id="llm-routers"      on .book; namespaces this book's saved progress
+
+  COMPONENTS (all wired by the script, no extra markup needed)
+    theme toggle      persists to localStorage, defaults to the OS preference
+    copy buttons      added to every <pre class="code">
+    jump palette      press g, or click the page counter
+    graded quiz       <form class="quiz"> with <li class="q" data-answer="b">
+    open drill        <div class="fr" data-id="ch3-q1"> — model answer + miss/shaky/solid rating
+    flashcards        <ol class="deck"> of <li class="card"> — click to flip, mark known
+    timer             <div class="timer" data-min="45"> — for timed mock rounds
+    readiness         <div id="readiness"></div> — a page that reads back all saved progress
+    answer key        <div class="key" id="answer-key"></div> — generated from the questions
+
+  Folios are stamped from page order so they never drift. Contents page numbers are written by
+  the assembler (or by hand, in which case run scripts/validate_book.py to confirm they match).
+-->
+
+<style>
+  /* ---------------- theme: two monochrome grounds ----------------
+     Dark is the default. A reader can switch, and the choice sticks. Both grounds stay strictly
+     greyscale: the restraint keeps every figure legible either way, and it keeps the effort in
+     the content rather than in palette decisions. */
+  :root {
+    --bg: #000000;
+    --fg: #ffffff;
+    --fg-2: #a8a8a8;
+    --fg-3: #6e6e6e;
+    --rule: #2a2a2a;
+    --rule-2: #3d3d3d;
+    --panel: #0a0a0a;
+    --ok: #ffffff;
+    --no: #6e6e6e;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff; --fg: #101010; --fg-2: #4a4a4a; --fg-3: #7c7c7c;
+      --rule: #d8d8d8; --rule-2: #b4b4b4; --panel: #f4f4f4;
+      --ok: #101010; --no: #7c7c7c;
+    }
+  }
+
+  /* the reader's explicit choice wins over the OS in both directions */
+  :root[data-book-theme="dark"] {
+    --bg: #000000; --fg: #ffffff; --fg-2: #a8a8a8; --fg-3: #6e6e6e;
+    --rule: #2a2a2a; --rule-2: #3d3d3d; --panel: #0a0a0a;
+    --ok: #ffffff; --no: #6e6e6e;
+  }
+  :root[data-book-theme="light"] {
+    --bg: #ffffff; --fg: #101010; --fg-2: #4a4a4a; --fg-3: #7c7c7c;
+    --rule: #d8d8d8; --rule-2: #b4b4b4; --panel: #f4f4f4;
+    --ok: #101010; --no: #7c7c7c;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    overflow: hidden;
+  }
+  body { font-family: var(--serif); -webkit-font-smoothing: antialiased; }
+
+  /* ---------------- paging ---------------- */
+
+  .book {
+    display: flex; height: 100vh;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; scrollbar-width: none;
+  }
+  .book::-webkit-scrollbar { display: none; }
+
+  .page {
+    flex: 0 0 100%; width: 100%; height: 100vh;
+    scroll-snap-align: start; scroll-snap-stop: always;
+    overflow-y: auto; position: relative;
+    padding: clamp(2.2rem, 5vh, 4rem) clamp(1.3rem, 6vw, 5rem) 4.2rem;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--rule);
+  }
+
+  .leaf { width: 100%; max-width: 60ch; margin: 0 auto; flex: 1 0 auto;
+    display: flex; flex-direction: column; }
+  .leaf.wide { max-width: 78ch; }
+
+  .rh {
+    font-family: var(--mono); font-size: 0.63rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--fg-3);
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding-bottom: 0.6rem; margin: 0 auto clamp(1.4rem, 4vh, 2.6rem);
+    border-bottom: 1px solid var(--rule);
+    width: 100%; max-width: 60ch; flex: none;
+  }
+  .page.w .rh { max-width: 78ch; }
+
+  .folio {
+    position: absolute; bottom: 1.5rem; left: 0; right: 0; text-align: center;
+    font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em;
+    color: var(--fg-3); font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+
+  /* ---------------- type ---------------- */
+
+  h1, h2, h3 { font-weight: 400; margin: 0; text-wrap: balance; }
+
+  .cover-mark { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--fg-2); margin-bottom: auto; }
+  .cover h1 { font-size: clamp(2.2rem, 7vw, 4.4rem); line-height: 1.02;
+    letter-spacing: -0.025em; margin-bottom: 1.4rem; }
+  .cover .sub { font-size: clamp(1.02rem, 2.2vw, 1.3rem); color: var(--fg-2);
+    line-height: 1.5; max-width: 42ch; margin-bottom: 2.4rem; }
+  .cover .imprint { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em;
+    color: var(--fg-3); line-height: 1.9; border-top: 1px solid var(--rule); padding-top: 1.2rem; }
+
+  .page.part .leaf { justify-content: center; }
+  .rule-long { width: 4rem; height: 1px; background: var(--fg); margin-bottom: 2rem; }
+  .part-num { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--fg-2); margin-bottom: 1.6rem; }
+  .part-title { font-size: clamp(1.9rem, 5.5vw, 3.2rem); line-height: 1.06;
+    letter-spacing: -0.02em; margin-bottom: 1.3rem; }
+  .part-gloss { color: var(--fg-2); font-size: 1.02rem; max-width: 38ch; line-height: 1.55; }
+
+  h2.ch-title { font-size: clamp(1.5rem, 3.4vw, 2.1rem); line-height: 1.15;
+    letter-spacing: -0.015em; margin-bottom: 1.2rem; }
+  h2.ch-title .cn { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em;
+    color: var(--fg-3); display: block; margin-bottom: 0.7rem; }
+
+  h3.sub { font-family: var(--mono); font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--fg-2); margin: 1.6rem 0 0.7rem; }
+  h3.sub:first-child { margin-top: 0; }
+
+  p { margin: 0 0 1rem; font-size: 0.98rem; line-height: 1.66; }
+  p.lede { font-size: 1.14rem; line-height: 1.5; margin-bottom: 1.3rem; }
+  p.small { font-size: 0.9rem; color: var(--fg-2); }
+
+  ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; font-size: 0.96rem; line-height: 1.6; }
+  li { margin-bottom: 0.4rem; }
+  li::marker { color: var(--fg-3); }
+
+  code { font-family: var(--mono); font-size: 0.85em; color: var(--fg); }
+  p code, li code, td code { border-bottom: 1px solid var(--rule-2); }
+  em { font-style: italic; }
+  strong { font-weight: 400; border-bottom: 1px solid var(--rule-2); }
+
+  /* ---------------- code + copy button ---------------- */
+
+  .codewrap { position: relative; margin: 0 0 0.5rem; }
+  pre.code {
+    font-family: var(--mono); font-size: clamp(0.66rem, 1.35vw, 0.76rem); line-height: 1.6;
+    color: var(--fg); background: var(--panel); border: 1px solid var(--rule);
+    padding: 0.95rem 1.1rem; overflow-x: auto; margin: 0;
+  }
+  pre.code code { border: none; font-size: inherit; }
+  pre.code .c { color: var(--fg-3); }
+
+  .copy {
+    position: absolute; top: 0.4rem; right: 0.4rem;
+    font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--fg-3);
+    background: var(--bg); border: 1px solid var(--rule-2);
+    padding: 0.2rem 0.45rem; cursor: pointer; opacity: 0;
+    transition: opacity 0.12s linear;
+  }
+  .codewrap:hover .copy, .copy:focus-visible { opacity: 1; }
+  .copy:hover { color: var(--fg); border-color: var(--fg); }
+  .copy:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+  .cap { font-family: var(--mono); font-size: 0.65rem; line-height: 1.6; color: var(--fg-3);
+    margin: 0 0 1.2rem; }
+  .cap b { color: var(--fg-2); font-weight: 400; letter-spacing: 0.1em;
+    text-transform: uppercase; font-size: 0.9em; }
+
+  /* ---------------- figures ---------------- */
+
+  figure { margin: 0 0 1rem; flex: none; }
+  figure svg { width: 100%; height: auto; max-height: 54vh; display: block; }
+  .fig-text { font-family: var(--mono); font-size: 10px; fill: var(--fg); letter-spacing: 0.04em; }
+  .fig-text-sm { font-family: var(--mono); font-size: 8.5px; fill: var(--fg-2); letter-spacing: 0.04em; }
+  .fig-stroke { stroke: var(--fg); fill: none; stroke-width: 1.25; }
+  .fig-stroke-thin { stroke: var(--fg-3); fill: none; stroke-width: 1; }
+  .fig-dash { stroke: var(--fg-3); fill: none; stroke-width: 1; stroke-dasharray: 3 3; }
+
+  /* ---------------- tables ---------------- */
+
+  .tw { overflow-x: auto; margin: 0 0 1.1rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem 0.5rem 0;
+    border-bottom: 1px solid var(--rule); vertical-align: top; line-height: 1.5; }
+  th { font-family: var(--mono); font-size: 0.62rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--fg-3); font-weight: 400;
+    border-bottom: 1px solid var(--rule-2); }
+  td:last-child, th:last-child { padding-right: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums;
+    white-space: nowrap; }
+
+  /* ---------------- callouts ---------------- */
+
+  .box { border: 1px solid var(--rule-2); padding: 0.85rem 1rem; margin: 0 0 1.1rem;
+    background: var(--panel); }
+  .box .lab { font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase;
+    letter-spacing: 0.18em; color: var(--fg-2); display: block; margin-bottom: 0.5rem; }
+  .box.trap, .box.say { border-left-width: 3px; border-left-color: var(--fg); }
+  .box p { font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .box p:last-child { margin-bottom: 0; }
+  /* .box.say holds the sentence to actually say out loud in a room */
+  .box.say p { font-size: 0.95rem; }
+
+  /* ---------------- inline exercises ---------------- */
+
+  .drill { margin-top: auto; padding-top: 1.2rem; border-top: 1px solid var(--rule); flex: none; }
+  .drill > .lab { font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase;
+    letter-spacing: 0.18em; color: var(--fg-3); display: block; margin-bottom: 0.7rem; }
+  details { border-bottom: 1px solid var(--rule); padding: 0.45rem 0; }
+  details:last-child { border-bottom: none; }
+  summary { cursor: pointer; font-size: 0.9rem; list-style: none; display: flex;
+    gap: 0.55rem; align-items: baseline; line-height: 1.5; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+"; font-family: var(--mono); font-size: 0.75rem;
+    color: var(--fg-3); flex: none; }
+  details[open] summary::before { content: "\2212"; color: var(--fg); }
+  summary:focus-visible { outline: 1px solid var(--fg); outline-offset: 3px; }
+  .answer { font-size: 0.86rem; color: var(--fg-2); line-height: 1.6;
+    padding: 0.6rem 0 0.2rem 1.1rem; border-left: 1px solid var(--rule-2); margin: 0.6rem 0 0; }
+  .answer p { font-size: inherit; margin-bottom: 0.5rem; }
+  .answer p:last-child { margin-bottom: 0; }
+  .answer ul, .answer ol { font-size: inherit; }
+
+  /* ---------------- open drills: the ones you answer out loud ----------------
+     An interview is spoken, so the highest-value exercise is not multiple choice. The reader
+     answers from memory, opens the model answer, and rates themselves. The rating persists,
+     which is what lets the readiness page tell them where to go back to. */
+
+  .fr { border-top: 1px solid var(--rule); padding: 0.75rem 0 0.55rem; }
+  .fr:first-of-type { border-top: none; padding-top: 0; }
+  .fr .prompt { font-size: 0.94rem; line-height: 1.55; margin: 0 0 0.45rem;
+    display: flex; gap: 0.6rem; }
+  .fr .prompt .tag { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--fg-3); flex: none; padding-top: 0.42em; }
+  .fr .rate { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.5rem;
+    flex-wrap: wrap; }
+  .fr .rate .lab { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-3); margin-right: 0.25rem; }
+  .rbtn { appearance: none; background: var(--bg); border: 1px solid var(--rule-2);
+    color: var(--fg-2); font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em;
+    text-transform: uppercase; padding: 0.24rem 0.55rem; cursor: pointer; }
+  .rbtn:hover { color: var(--fg); border-color: var(--fg); }
+  .rbtn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .rbtn:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+  /* ---------------- follow-up ladder ----------------
+     What the interviewer asks next, and what a weak, solid, and strong answer sounds like.
+     The ladder is the component that separates this from a textbook: it teaches the shape of
+     the conversation, not just the fact. */
+
+  .ladder { margin: 0 0 1.1rem; }
+  .ladder .step { border-left: 1px solid var(--rule-2); padding: 0 0 0.7rem 0.9rem;
+    margin: 0; position: relative; }
+  .ladder .step:last-child { padding-bottom: 0; }
+  .ladder .step::before { content: ""; position: absolute; left: -3px; top: 0.5em;
+    width: 5px; height: 5px; background: var(--fg); }
+  .ladder .ask { font-size: 0.93rem; line-height: 1.5; margin: 0 0 0.4rem; }
+  .ladder .ask b { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-3); font-weight: 400; display: block;
+    margin-bottom: 0.25rem; border: none; }
+  .ladder dl { margin: 0 0 0.2rem; font-size: 0.86rem; line-height: 1.55; }
+  .ladder dt { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-3); margin-top: 0.35rem; }
+  .ladder dd { margin: 0.1rem 0 0; color: var(--fg-2); }
+  .ladder dd.strong { color: var(--fg); }
+
+  /* ---------------- mock interview transcript ---------------- */
+
+  .dlg { margin: 0 0 1rem; }
+  .dlg .turn { display: grid; grid-template-columns: 4.4rem 1fr; gap: 0.85rem;
+    padding: 0.5rem 0; border-top: 1px solid var(--rule); }
+  .dlg .turn:first-child { border-top: none; }
+  .dlg .who { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-3); padding-top: 0.3em; }
+  .dlg .turn.you .who { color: var(--fg); }
+  .dlg .said { font-size: 0.92rem; line-height: 1.6; margin: 0; }
+  .dlg .note { font-family: var(--mono); font-size: 0.68rem; line-height: 1.6;
+    color: var(--fg-3); margin: 0.45rem 0 0; padding-left: 0.8rem;
+    border-left: 1px solid var(--rule-2); }
+  .dlg .note b { color: var(--fg-2); font-weight: 400; text-transform: uppercase;
+    letter-spacing: 0.1em; font-size: 0.9em; border: none; }
+
+  /* ---------------- timed drill clock ---------------- */
+
+  .timer { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 1rem;
+    border: 1px solid var(--rule-2); background: var(--panel);
+    padding: 0.5rem 0.7rem; flex: none; }
+  .timer .clock { font-family: var(--mono); font-size: 1.05rem; letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums; min-width: 4.4rem; }
+  .timer .clock[data-done="true"] { color: var(--fg-3); }
+  .timer .what { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--fg-3); margin-left: auto; text-align: right; }
+
+  /* ---------------- flashcards ---------------- */
+
+  ol.deck { list-style: none; padding: 0; margin: 0 0 1rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.6rem; }
+  ol.deck li.card { margin: 0; border: 1px solid var(--rule-2); background: var(--panel);
+    display: flex; flex-direction: column; min-height: 6.6rem; }
+  ol.deck li.card .face { appearance: none; background: none; border: none; color: var(--fg);
+    font-family: inherit; font-size: 0.88rem; line-height: 1.5; text-align: left;
+    padding: 0.7rem 0.8rem; cursor: pointer; flex: 1 0 auto; }
+  ol.deck li.card .face:focus-visible { outline: 1px solid var(--fg); outline-offset: -2px; }
+  ol.deck li.card .back { display: none; font-size: 0.84rem; line-height: 1.55;
+    color: var(--fg-2); padding: 0 0.8rem 0.6rem; }
+  ol.deck li.card[data-flipped="true"] .back { display: block; }
+  ol.deck li.card[data-flipped="true"] .face { color: var(--fg-3); font-size: 0.78rem; }
+  ol.deck li.card .mark { display: flex; gap: 0.35rem; padding: 0 0.8rem 0.7rem; }
+  ol.deck li.card[data-known="true"] { border-color: var(--fg); }
+  .deck-bar { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+    border-top: 1px solid var(--rule); padding-top: 0.75rem; margin-top: auto; flex: none; }
+
+  /* ---------------- practice examination ---------------- */
+
+  .quiz { display: flex; flex-direction: column; min-height: 0; }
+  ol.qs { list-style: none; padding: 0; margin: 0 0 1rem; counter-reset: qnum; }
+  li.q { border-top: 1px solid var(--rule); padding: 0.7rem 0 0.5rem; margin: 0; }
+  li.q:first-child { border-top: none; padding-top: 0; }
+  li.q .qt { font-size: 0.94rem; margin: 0 0 0.5rem; display: flex; gap: 0.6rem;
+    line-height: 1.55; }
+  li.q .qt::before {
+    content: counter(qnum); counter-increment: qnum;
+    font-family: var(--mono); font-size: 0.68rem; color: var(--fg-3);
+    flex: none; padding-top: 0.32em; font-variant-numeric: tabular-nums;
+  }
+
+  li.q label {
+    display: flex; gap: 0.5rem; align-items: baseline;
+    font-size: 0.88rem; line-height: 1.5; padding: 0.16rem 0 0.16rem 1.9rem;
+    cursor: pointer; color: var(--fg-2);
+  }
+  li.q label:hover { color: var(--fg); }
+  li.q input { appearance: none; width: 0.7rem; height: 0.7rem; margin: 0; flex: none;
+    border: 1px solid var(--rule-2); border-radius: 50%; position: relative;
+    top: 0.16em; cursor: pointer; background: var(--bg); }
+  li.q input:checked { border-color: var(--fg); box-shadow: inset 0 0 0 2px var(--bg),
+    inset 0 0 0 4px var(--fg); }
+  li.q input:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+  li.q .why {
+    display: none; font-size: 0.84rem; color: var(--fg-2); line-height: 1.6;
+    margin: 0.5rem 0 0 1.9rem; padding-left: 0.9rem; border-left: 1px solid var(--rule-2);
+  }
+  li.q.graded .why { display: block; }
+  li.q.graded .verdict {
+    font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em;
+    text-transform: uppercase; margin-left: 0.5rem;
+  }
+  li.q.ok .verdict { color: var(--ok); }
+  li.q.no .verdict { color: var(--no); }
+  li.q.ok { border-left: 2px solid var(--ok); padding-left: 0.7rem; }
+  li.q.no { border-left: 2px solid var(--no); padding-left: 0.7rem; }
+
+  .quiz-bar { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+    border-top: 1px solid var(--rule); padding-top: 0.8rem; margin-top: auto; flex: none; }
+  .qbtn { appearance: none; background: var(--bg); border: 1px solid var(--rule-2);
+    color: var(--fg); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 0.42rem 0.8rem; cursor: pointer; }
+  .qbtn:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .qbtn:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+  .score { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em;
+    color: var(--fg-2); font-variant-numeric: tabular-nums; }
+
+  /* answer key page */
+  .key { font-family: var(--mono); font-size: 0.74rem; line-height: 1.9;
+    columns: 2; column-gap: 2.4rem; }
+  .key span { display: block; color: var(--fg-2); }
+  .key b { color: var(--fg); font-weight: 400; }
+
+  /* ---------------- readiness meter ----------------
+     Rendered from saved progress: what has been graded, what has been rated, what was skipped.
+     A study book that cannot tell you where you are weak has made you do the bookkeeping. */
+
+  .meter { font-family: var(--mono); font-size: 0.72rem; }
+  .meter .row { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.3rem 0;
+    border-bottom: 1px solid var(--rule); }
+  .meter .row .nm { flex: 1; color: var(--fg-2); }
+  .meter .row .bar { flex: none; width: 6.5rem; height: 6px; background: var(--panel);
+    border: 1px solid var(--rule-2); position: relative; }
+  .meter .row .bar i { position: absolute; inset: 0 auto 0 0; background: var(--fg); }
+  .meter .row .st { flex: none; width: 5.4rem; text-align: right; color: var(--fg-3);
+    font-variant-numeric: tabular-nums; }
+  .meter .row.done .nm { color: var(--fg); }
+  .meter .total { display: flex; align-items: baseline; gap: 0.6rem; margin-top: 0.9rem;
+    padding-top: 0.7rem; border-top: 1px solid var(--rule-2); font-size: 0.8rem; }
+  .meter .total .big { font-size: 1.5rem; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; }
+  .meter .none { color: var(--fg-3); }
+
+  /* ---------------- contents ---------------- */
+
+  .toc { font-family: var(--mono); font-size: 0.76rem; line-height: 1.5; }
+  .toc.tight { font-size: 0.66rem; columns: 2; column-gap: 2.2rem; }
+  .toc .grp { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--fg-3); margin: 1.1rem 0 0.5rem; padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--rule); break-after: avoid; }
+  .toc .grp:first-child { margin-top: 0; }
+  .toc a { color: var(--fg); text-decoration: none; display: flex; align-items: baseline;
+    gap: 0.6rem; padding: 0.2rem 0; break-inside: avoid; }
+  .toc a .n { color: var(--fg-3); font-variant-numeric: tabular-nums; flex: none; }
+  .toc a .dots { flex: 1; border-bottom: 1px dotted var(--rule-2); transform: translateY(-0.18em); }
+  .toc a .pg { color: var(--fg-2); font-variant-numeric: tabular-nums; flex: none; }
+  .toc a:hover .n, .toc a:hover .pg { color: var(--fg); }
+  .toc a:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+  /* ---------------- controls ---------------- */
+
+  .nav { position: fixed; bottom: 1.05rem; right: 1.1rem; display: flex;
+    align-items: center; gap: 0.45rem; z-index: 30; }
+  .nav button { appearance: none; background: var(--bg); border: 1px solid var(--rule-2);
+    color: var(--fg); font-family: var(--mono); font-size: 0.82rem; line-height: 1;
+    width: 2.1rem; height: 2.1rem; cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .nav button:hover:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .nav button:disabled { color: var(--rule-2); cursor: default; }
+  .nav button:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+  .nav .count { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em;
+    color: var(--fg-3); min-width: 4.4rem; text-align: center;
+    font-variant-numeric: tabular-nums; background: none; border: none; cursor: pointer;
+    padding: 0.4rem 0; }
+  .nav .count:hover { color: var(--fg); }
+
+  .hint { position: fixed; bottom: 1.4rem; left: 1.2rem; font-family: var(--mono);
+    font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-3);
+    z-index: 20; pointer-events: none; }
+
+  .tick { position: fixed; top: 0; left: 0; height: 2px; background: var(--fg);
+    width: 0; z-index: 40; transition: width 0.18s linear; }
+
+  /* jump palette */
+  .palette {
+    position: fixed; inset: 0; background: var(--bg); z-index: 50;
+    display: none; flex-direction: column;
+    padding: clamp(2rem, 8vh, 5rem) clamp(1.3rem, 6vw, 5rem);
+  }
+  .palette[data-open="true"] { display: flex; }
+  .palette h2 { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--fg-3); margin-bottom: 0.8rem; }
+  .palette .filter { appearance: none; background: var(--panel); border: 1px solid var(--rule-2);
+    color: var(--fg); font-family: var(--mono); font-size: 0.74rem; padding: 0.45rem 0.6rem;
+    margin-bottom: 1rem; width: 100%; max-width: 28rem; }
+  .palette .filter:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+  .palette ol { list-style: none; padding: 0; margin: 0; overflow-y: auto;
+    columns: 2; column-gap: 2.5rem; font-family: var(--mono); font-size: 0.72rem; }
+  .palette li { margin: 0; break-inside: avoid; }
+  .palette li[hidden] { display: none; }
+  .palette button.jump { appearance: none; background: none; border: none; width: 100%;
+    text-align: left; color: var(--fg-2); font: inherit; cursor: pointer;
+    display: flex; gap: 0.7rem; padding: 0.22rem 0; }
+  .palette button.jump:hover, .palette button.jump:focus-visible { color: var(--fg); outline: none; }
+  .palette button.jump .n { color: var(--fg-3); font-variant-numeric: tabular-nums; flex: none; }
+  .palette .close { margin-top: 1.4rem; align-self: flex-start; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .book { scroll-behavior: auto; }
+    .tick, .copy { transition: none; }
+    * { animation: none !important; }
+  }
+  @media (min-width: 900px) { .book { scroll-behavior: smooth; } }
+  @media (max-width: 620px) {
+    .hint { display: none; }
+    .palette ol, .key, .toc.tight { columns: 1; }
+    .dlg .turn { grid-template-columns: 1fr; gap: 0.2rem; }
+  }
+</style>
+
+<div class="tick" id="tick"></div>
+
+<!-- data-book-id namespaces saved progress. Change it per book, or two books share a meter. -->
+<div class="book" id="book" data-book-id="REPLACE-topic-slug">
+
+<!-- assemble_book.py replaces everything between the two markers with your fragments -->
+<!-- BEGIN:PAGES -->
+
+  <!-- ============ COVER ============ -->
+  <section class="page cover">
+    <div class="leaf">
+      <p class="cover-mark">Topic name &middot; interview preparation</p>
+      <h1>Title in two<br />or three lines</h1>
+      <p class="sub">One sentence naming the destination: what the reader will be able to say,
+        draw, and defend at the end.</p>
+      <div class="imprint">
+        Prepared for &nbsp; the reader's stated goal<br />
+        Level &nbsp; the seniority this book is calibrated to<br />
+        Researched &nbsp; month year &middot; N pages &middot; N questions
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONTENTS ============
+       In an assembled book this page holds <div class="toc" data-auto="true"></div> and the
+       assembler writes the entries with correct page numbers. Written by hand below so the
+       shell renders on its own. -->
+  <section class="page">
+    <div class="rh"><span>Contents</span><span>N chapters</span></div>
+    <div class="leaf">
+      <div class="toc">
+        <p class="grp">Part I &middot; Ground truth</p>
+        <a href="#p-c1"><span class="n">01</span><span>Chapter title</span><span class="dots"></span><span class="pg">05</span></a>
+        <a href="#p-s1"><span class="n">&nbsp;&nbsp;&nbsp;</span><span>Practice sheet one</span><span class="dots"></span><span class="pg">07</span></a>
+        <p class="grp">Part IV &middot; How you will be grilled</p>
+        <a href="#p-ladder"><span class="n">02</span><span>Follow-up ladders</span><span class="dots"></span><span class="pg">08</span></a>
+        <a href="#p-mock"><span class="n">03</span><span>A mock round, annotated</span><span class="dots"></span><span class="pg">09</span></a>
+        <a href="#p-rubric"><span class="n">04</span><span>What each level sounds like</span><span class="dots"></span><span class="pg">10</span></a>
+        <p class="grp">Appendices</p>
+        <a href="#p-cards"><span class="n">A</span><span>Flashcards</span><span class="dots"></span><span class="pg">11</span></a>
+        <a href="#p-exam"><span class="n">B</span><span>Final examination</span><span class="dots"></span><span class="pg">12</span></a>
+        <a href="#p-key"><span class="n">C</span><span>Answer key</span><span class="dots"></span><span class="pg">13</span></a>
+        <a href="#p-ready"><span class="n">D</span><span>Readiness</span><span class="dots"></span><span class="pg">14</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW TO USE THIS BOOK ============ -->
+  <section class="page">
+    <div class="rh"><span>How to use this book</span><span>Front matter</span></div>
+    <div class="leaf">
+      <h2 class="ch-title">How to use this book</h2>
+      <p class="lede">Three routes through the same material, chosen by how long you have.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>You have</th><th>Read</th><th>Do</th></tr></thead>
+          <tbody>
+            <tr><td class="num">2 days</td><td>Parts II and IV</td><td>Every practice sheet, then the final examination</td></tr>
+            <tr><td class="num">2 weeks</td><td>All parts in order</td><td>Sheets, ladders, both mock rounds timed</td></tr>
+            <tr><td class="num">A month</td><td>All, plus the sources</td><td>Everything, then rebuild the figures from memory</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="box">
+        <span class="lab">Mechanics</span>
+        <p>Arrow keys, the buttons at the lower right, or a swipe turn pages. <code>g</code> opens
+          a jump palette. The sun/moon button switches ground. Your grades, self-ratings, and
+          flashcard marks are saved in this browser and gather on the readiness page.</p>
+      </div>
+      <div class="box say">
+        <span class="lab">Say this</span>
+        <p>Boxes like this hold a sentence worth saying more or less verbatim in a room. Read them
+          out loud, once. A rehearsed opening sentence buys you the twenty seconds you need to
+          plan the rest of the answer.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PART TITLE ============ -->
+  <section class="page part">
+    <div class="leaf">
+      <div class="rule-long"></div>
+      <p class="part-num">Part one</p>
+      <h2 class="part-title">Ground truth</h2>
+      <p class="part-gloss">One sentence on what this part establishes and why it comes first.</p>
+    </div>
+  </section>
+
+  <!-- ============ THEORY PAGE ============ -->
+  <section class="page" id="p-c1" data-ch="One &middot; Chapter title">
+    <div class="rh"><span>One &middot; Chapter title</span><span>Section</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Chapter one</span>Chapter title</h2>
+      <p class="lede">A lede states the chapter's claim in one sentence.</p>
+      <h3 class="sub">A subsection</h3>
+      <p>Prose at 60 characters wide. Name the real terms, and define each one the first time
+        it appears, because an interviewer will use the term and expect you to already own it.</p>
+      <pre class="code"><code>quantity = value      <span class="c"># the numbers you should know cold</span>
+p99 = 240ms           <span class="c"># with the source, and the date it was measured</span></code></pre>
+      <p class="cap"><b>Why this matters</b> A caption can carry the point the figure or code
+        only implies.</p>
+      <div class="box trap">
+        <span class="lab">Trap</span>
+        <p>The misconception a candidate walks in with. These are the highest-value pages in the
+          book, because they are what gets a good candidate marked down, and they are where the
+          best examination questions come from.</p>
+      </div>
+      <div class="drill">
+        <span class="lab">Check yourself</span>
+        <details><summary>A question whose wrong answer is worth making?</summary>
+          <div class="answer"><p>The answer, written out, explaining the reasoning rather than
+            just stating the fact.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WIDE FIGURE PAGE ============ -->
+  <section class="page w" data-ch="One &middot; Chapter title">
+    <div class="rh"><span>One &middot; Chapter title</span><span>A figure</span></div>
+    <div class="leaf wide">
+      <h3 class="sub">The shape of it</h3>
+      <p>Introduce what the figure argues before showing it. On an interview whiteboard you will
+        redraw this from memory, so the figure is deliberately drawable in under a minute.</p>
+      <figure>
+        <svg viewBox="0 0 600 150" role="img" aria-label="A request flows into a router, which chooses between two models, and the choice is the emphasized node of the figure.">
+          <rect x="20" y="50" width="110" height="40" class="fig-stroke" />
+          <text x="36" y="75" class="fig-text">request</text>
+          <path d="M130 70 L180 70" class="fig-stroke" />
+          <path d="M174 66 L180 70 L174 74" class="fig-stroke" />
+          <rect x="180" y="50" width="110" height="40" class="fig-stroke" style="stroke-width:2" />
+          <text x="196" y="75" class="fig-text">the decision</text>
+          <path d="M290 70 L340 70" class="fig-stroke" />
+          <path d="M334 66 L340 70 L334 74" class="fig-stroke" />
+          <rect x="340" y="30" width="110" height="32" class="fig-stroke-thin" />
+          <text x="354" y="50" class="fig-text-sm">cheap path</text>
+          <rect x="340" y="78" width="110" height="32" class="fig-stroke-thin" />
+          <text x="354" y="98" class="fig-text-sm">expensive path</text>
+          <line x1="20" y1="126" x2="580" y2="126" class="fig-stroke-thin" />
+          <text x="20" y="142" class="fig-text-sm">the takeaway, stated inside the drawing</text>
+        </svg>
+        <p class="cap"><b>Figure 1.1</b> Caption states what the figure shows and what to
+          conclude from it.</p>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ PRACTICE SHEET ============
+       One after every chapter. Graded questions on the misconceptions, then open drills the
+       reader answers out loud and rates. data-ch ties both to the readiness page. -->
+  <section class="page" id="p-s1" data-ch="One &middot; Chapter title">
+    <div class="rh"><span>Practice sheet one</span><span>Chapter one</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Practice sheet one</span>Chapter one</h2>
+      <form class="quiz">
+        <ol class="qs">
+          <li class="q" data-answer="b">
+            <p class="qt">A question whose distractors are all plausible?<span class="verdict"></span></p>
+            <label><input type="radio" name="s1q1" value="a" /><span>A tempting wrong answer</span></label>
+            <label><input type="radio" name="s1q1" value="b" /><span>The correct answer</span></label>
+            <label><input type="radio" name="s1q1" value="c" /><span>Another tempting wrong answer</span></label>
+            <div class="why"><strong>b.</strong> Why b is right, and why a and c look right until
+              you know the thing this chapter taught.</div>
+          </li>
+          <li class="q" data-answer="c">
+            <p class="qt">A second question, drawn from the trap?<span class="verdict"></span></p>
+            <label><input type="radio" name="s1q2" value="a" /><span>Option</span></label>
+            <label><input type="radio" name="s1q2" value="b" /><span>Option</span></label>
+            <label><input type="radio" name="s1q2" value="c" /><span>Option</span></label>
+            <div class="why"><strong>c.</strong> Explanation, including why the obvious answer
+              is not it.</div>
+          </li>
+        </ol>
+        <div class="quiz-bar">
+          <button type="button" class="qbtn" data-action="check">Grade</button>
+          <button type="button" class="qbtn" data-action="reset">Clear</button>
+          <span class="score"></span>
+        </div>
+      </form>
+      <div class="drill" style="margin-top:1.3rem">
+        <span class="lab">Out loud, from memory</span>
+        <div class="fr" data-id="s1-fr1">
+          <p class="prompt"><span class="tag">60 sec</span><span>The prompt, phrased the way an
+            interviewer would phrase it.</span></p>
+          <details><summary>Model answer</summary>
+            <div class="answer">
+              <p>What a strong answer contains, in the order a strong answer says it.</p>
+              <p><em>Marked down for:</em> the specific omission that costs the point.</p>
+            </div>
+          </details>
+          <div class="rate"><span class="lab">Rate yourself</span>
+            <button type="button" class="rbtn" data-rate="miss">missed</button>
+            <button type="button" class="rbtn" data-rate="shaky">shaky</button>
+            <button type="button" class="rbtn" data-rate="solid">solid</button>
+          </div>
+        </div>
+        <div class="fr" data-id="s1-fr2">
+          <p class="prompt"><span class="tag">draw</span><span>Reproduce figure 1.1 from memory,
+            then check it.</span></p>
+          <details><summary>What must be in the drawing</summary>
+            <div class="answer"><p>The three or four elements that carry the argument, and the
+              one relationship a wrong drawing gets backwards.</p></div>
+          </details>
+          <div class="rate"><span class="lab">Rate yourself</span>
+            <button type="button" class="rbtn" data-rate="miss">missed</button>
+            <button type="button" class="rbtn" data-rate="shaky">shaky</button>
+            <button type="button" class="rbtn" data-rate="solid">solid</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOLLOW-UP LADDER ============ -->
+  <section class="page" id="p-ladder" data-ch="Two &middot; Follow-up ladders">
+    <div class="rh"><span>Two &middot; Follow-up ladders</span><span>Where it goes next</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Chapter two</span>The ladder they climb</h2>
+      <p>An interviewer rarely asks one question. They ask one, then follow your answer down.
+        Each rung below is a real follow-up, with what the three grades of answer sound like.</p>
+      <div class="ladder">
+        <div class="step">
+          <p class="ask"><b>They open with</b>The opening question, verbatim as reported.</p>
+          <dl>
+            <dt>weak</dt><dd>The answer that recites a definition.</dd>
+            <dt>solid</dt><dd>The answer that names the trade-off and picks a side.</dd>
+            <dt>strong</dt><dd class="strong">The answer that names the trade-off, picks a side,
+              and states the condition under which it would pick the other.</dd>
+          </dl>
+        </div>
+        <div class="step">
+          <p class="ask"><b>Then</b>The follow-up that tests whether you meant it.</p>
+          <dl>
+            <dt>weak</dt><dd>Retreats from the earlier claim.</dd>
+            <dt>strong</dt><dd class="strong">Holds it, and quantifies.</dd>
+          </dl>
+        </div>
+        <div class="step">
+          <p class="ask"><b>Then</b>The question that only someone who has operated this can
+            answer.</p>
+          <dl>
+            <dt>strong</dt><dd class="strong">The failure mode, how it is detected, and what the
+              first mitigation is.</dd>
+          </dl>
+        </div>
+      </div>
+      <p class="cap"><b>Note</b> Ladder rungs come from reported interview accounts; the grading
+        language is this book's, not any company's.</p>
+    </div>
+  </section>
+
+  <!-- ============ MOCK ROUND ============ -->
+  <section class="page w" id="p-mock" data-ch="Three &middot; Mock rounds">
+    <div class="rh"><span>Three &middot; Mock rounds</span><span>Round one, annotated</span></div>
+    <div class="leaf wide">
+      <h2 class="ch-title"><span class="cn">Mock round one</span>A design round, annotated</h2>
+      <div class="timer" data-min="45">
+        <button type="button" class="qbtn" data-timer="start">Start</button>
+        <button type="button" class="qbtn" data-timer="reset">Reset</button>
+        <span class="clock">45:00</span>
+        <span class="what">read the prompt, then close the book<br />and talk for the clock</span>
+      </div>
+      <div class="dlg">
+        <div class="turn"><span class="who">them</span><div>
+          <p class="said">The prompt, as it would be given, including the part that is
+            deliberately underspecified.</p></div></div>
+        <div class="turn you"><span class="who">you</span><div>
+          <p class="said">The opening move: restate, then ask the two questions that change the
+            design.</p>
+          <p class="note"><b>why</b> Asking these two first is what makes the rest of the hour
+            a conversation rather than a guess.</p></div></div>
+        <div class="turn"><span class="who">them</span><div>
+          <p class="said">The answer that pins the scope, plus the constraint that breaks the
+            obvious design.</p></div></div>
+        <div class="turn you"><span class="who">you</span><div>
+          <p class="said">The design, stated as a sequence with the numbers attached.</p>
+          <p class="note"><b>watch</b> The place candidates go quiet and start drawing. Narrate
+            instead: a silent whiteboard reads as a stall.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LEVEL SIGNALS ============ -->
+  <section class="page w" id="p-rubric" data-ch="Four &middot; Level signals">
+    <div class="rh"><span>Four &middot; Level signals</span><span>What each level sounds like</span></div>
+    <div class="leaf wide">
+      <h2 class="ch-title"><span class="cn">Chapter four</span>What each level sounds like</h2>
+      <p>The same question is asked at every level. What changes is what counts as a complete
+        answer.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Dimension</th><th>Mid</th><th>Senior</th><th>Staff and up</th></tr></thead>
+          <tbody>
+            <tr><td>Scoping</td><td>Answers the question asked</td><td>Names what was left out</td><td>Reframes when the question hides the real problem</td></tr>
+            <tr><td>Numbers</td><td>Order of magnitude</td><td>Specific, sourced</td><td>Specific, and says how they would measure it here</td></tr>
+            <tr><td>Failure</td><td>Mentions it can fail</td><td>Names the mode and the detector</td><td>Names the blast radius and the rollback</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="cap"><b>Calibration</b> Say where this table came from: published levelling
+        guides, reported loops, or inference. If it is inference, say so here.</p>
+    </div>
+  </section>
+
+  <!-- ============ FLASHCARDS ============ -->
+  <section class="page w" id="p-cards">
+    <div class="rh"><span>Appendix A &middot; Flashcards</span><span>Recall</span></div>
+    <div class="leaf wide">
+      <h2 class="ch-title"><span class="cn">Appendix A</span>Flashcards</h2>
+      <p class="small">Click a card to turn it. Mark the ones you knew; the count and the
+        readiness page remember.</p>
+      <ol class="deck">
+        <li class="card" data-id="c1">
+          <button type="button" class="face">The term, or the number, on the front.</button>
+          <div class="back">The definition, or the value with its unit and source.</div>
+          <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+        </li>
+        <li class="card" data-id="c2">
+          <button type="button" class="face">A second card.</button>
+          <div class="back">Its back.</div>
+          <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+        </li>
+        <li class="card" data-id="c3">
+          <button type="button" class="face">A third card.</button>
+          <div class="back">Its back.</div>
+          <div class="mark"><button type="button" class="rbtn" data-known="1">knew it</button></div>
+        </li>
+      </ol>
+      <div class="deck-bar">
+        <button type="button" class="qbtn" data-deck="flip">Turn all</button>
+        <button type="button" class="qbtn" data-deck="clear">Unmark all</button>
+        <span class="score" data-deck-score></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FINAL EXAMINATION ============
+       4 to 6 questions per page. data-answer holds the correct value; the .why block is
+       revealed on grading and explains why the distractors were tempting. -->
+  <section class="page" id="p-exam" data-ch="Final examination">
+    <div class="rh"><span>Appendix B &middot; Final examination</span><span>Part one</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Appendix B</span>Final examination</h2>
+      <p class="small">Answer, then grade. Wrong answers are worth more than right ones here:
+        each explanation says why the distractor was tempting.</p>
+      <form class="quiz">
+        <ol class="qs">
+          <li class="q" data-answer="c">
+            <p class="qt">A question that a reader who skimmed will get wrong?<span class="verdict"></span></p>
+            <label><input type="radio" name="x1" value="a" /><span>Option</span></label>
+            <label><input type="radio" name="x1" value="b" /><span>Option</span></label>
+            <label><input type="radio" name="x1" value="c" /><span>Option</span></label>
+            <label><input type="radio" name="x1" value="d" /><span>Option</span></label>
+            <div class="why"><strong>c.</strong> Explanation.</div>
+          </li>
+          <li class="q" data-answer="a">
+            <p class="qt">A consequence question rather than a definition question?<span class="verdict"></span></p>
+            <label><input type="radio" name="x2" value="a" /><span>Option</span></label>
+            <label><input type="radio" name="x2" value="b" /><span>Option</span></label>
+            <label><input type="radio" name="x2" value="c" /><span>Option</span></label>
+            <div class="why"><strong>a.</strong> Explanation.</div>
+          </li>
+        </ol>
+        <div class="quiz-bar">
+          <button type="button" class="qbtn" data-action="check">Grade this page</button>
+          <button type="button" class="qbtn" data-action="reset">Clear</button>
+          <span class="score"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ ANSWER KEY ============ -->
+  <section class="page" id="p-key">
+    <div class="rh"><span>Appendix C &middot; Answer key</span><span>End matter</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Appendix C</span>Answer key</h2>
+      <p class="small">For anyone working on paper. Full explanations appear on the sheets and
+        examination pages when you grade them.</p>
+      <div class="key" id="answer-key"></div>
+      <p class="cap" style="margin-top:1.2rem"><b>Note</b> Generated from the questions
+        themselves, so it cannot drift out of sync with them.</p>
+    </div>
+  </section>
+
+  <!-- ============ READINESS ============ -->
+  <section class="page" id="p-ready">
+    <div class="rh"><span>Appendix D &middot; Readiness</span><span>End matter</span></div>
+    <div class="leaf">
+      <h2 class="ch-title"><span class="cn">Appendix D</span>Readiness</h2>
+      <p class="small">Built from what you have graded and rated in this browser. Nothing leaves
+        this page.</p>
+      <div class="meter" id="readiness"></div>
+      <div class="quiz-bar">
+        <button type="button" class="qbtn" id="progress-reset">Clear all progress</button>
+        <span class="score" id="progress-note"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section class="page">
+    <div class="rh"><span>Sources</span><span>End matter</span></div>
+    <div class="leaf">
+      <h2 class="ch-title">Sources</h2>
+      <p class="small">Where the theory came from: papers, primary documentation, production
+        write-ups, each with a date.</p>
+      <p class="small">Where the interview intelligence came from: candidate reports, published
+        engineering-blog descriptions of the loop, levelling guides. Name the kind of source, and
+        say how many accounts a claim rests on.</p>
+      <p class="small">What is inference rather than reported fact, marked plainly.</p>
+      <p class="small" style="margin-top:1.4rem;color:var(--fg-3)">Interview loops change. This
+        book was researched in a specific month; say which, and say that a loop described here
+        may already have been rewritten.</p>
+    </div>
+  </section>
+
+<!-- END:PAGES -->
+
+</div>
+
+<div class="hint">&larr; &rarr; pages &middot; G jump</div>
+
+<nav class="nav" aria-label="Book controls">
+  <button id="theme" type="button" aria-label="Switch between dark and light">&#9788;</button>
+  <button id="prev" type="button" aria-label="Previous page">&larr;</button>
+  <button class="count" id="count" type="button" aria-label="Jump to a page"></button>
+  <button id="next" type="button" aria-label="Next page">&rarr;</button>
+</nav>
+
+<div class="palette" id="palette" data-open="false" role="dialog" aria-modal="true" aria-label="Jump to page">
+  <h2>Jump to a page</h2>
+  <input class="filter" id="palette-filter" type="text" placeholder="filter, then Enter" aria-label="Filter pages" />
+  <ol id="palette-list"></ol>
+  <button class="qbtn close" id="palette-close" type="button">Close &middot; Esc</button>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var book = document.getElementById('book');
+    var pages = Array.prototype.slice.call(book.querySelectorAll('.page'));
+    var total = pages.length;
+
+    /* ---------- saved progress ----------
+       One record per book, namespaced by data-book-id so two books do not share a meter.
+       Shape: { q: {key: {r, n}}, r: {drillId: rating}, k: {cardId: 1} }
+       Every write is best-effort: private browsing throws on setItem and the book must still
+       work, just without memory. */
+    var BOOK_ID = book.getAttribute('data-book-id') || 'book';
+    var PKEY = 'tb:' + BOOK_ID;
+    var store = { q: {}, r: {}, k: {} };
+    try {
+      var rawStore = localStorage.getItem(PKEY);
+      if (rawStore) {
+        var parsed = JSON.parse(rawStore);
+        if (parsed && typeof parsed === 'object') {
+          store.q = parsed.q || {};
+          store.r = parsed.r || {};
+          store.k = parsed.k || {};
+        }
+      }
+    } catch (e) { /* unreadable or private mode: start empty */ }
+
+    function save() {
+      try { localStorage.setItem(PKEY, JSON.stringify(store)); } catch (e) {}
+    }
+
+    /* ---------- theme: OS default, reader's choice wins and persists ---------- */
+    var THEME_KEY = 'topic-book-theme';
+    var themeBtn = document.getElementById('theme');
+
+    function currentTheme() {
+      var set = root.getAttribute('data-book-theme');
+      if (set) return set;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light' : 'dark';
+    }
+    function paintThemeBtn() {
+      var dark = currentTheme() === 'dark';
+      themeBtn.innerHTML = dark ? '&#9788;' : '&#9789;';   // show what pressing it will give you
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
+    }
+    try {
+      var saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'dark' || saved === 'light') root.setAttribute('data-book-theme', saved);
+    } catch (e) { /* private mode: fall back to OS preference */ }
+    paintThemeBtn();
+
+    themeBtn.addEventListener('click', function () {
+      var next = currentTheme() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-book-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      paintThemeBtn();
+    });
+
+    /* ---------- folios stamped from page order, so they cannot drift ---------- */
+    pages.forEach(function (p, i) {
+      if (i === 0) return;
+      var f = document.createElement('div');
+      f.className = 'folio';
+      f.textContent = String(i + 1).padStart(2, '0');
+      p.appendChild(f);
+    });
+
+    /* ---------- which chapter a page belongs to ---------- */
+    function chapterOf(el) {
+      var page = el.closest ? el.closest('.page') : null;
+      if (!page) return 'Unsorted';
+      var ch = page.getAttribute('data-ch');
+      if (ch) return ch;
+      var rh = page.querySelector('.rh span');
+      if (rh && rh.textContent.trim()) return rh.textContent.trim();
+      return 'Page ' + (pages.indexOf(page) + 1);
+    }
+    function keyOf(el) {
+      var page = el.closest('.page');
+      var i = pages.indexOf(page);
+      var base = page && page.id ? page.id : 'p' + (i + 1);
+      var forms = page ? Array.prototype.slice.call(page.querySelectorAll('form.quiz')) : [];
+      var n = forms.indexOf(el);
+      return base + (n > 0 ? ':' + n : '');
+    }
+
+    /* ---------- paging ---------- */
+    var prev = document.getElementById('prev');
+    var next = document.getElementById('next');
+    var count = document.getElementById('count');
+    var tick = document.getElementById('tick');
+
+    function current() { return Math.round(book.scrollLeft / book.clientWidth); }
+    function paint() {
+      var i = current();
+      count.textContent = String(i + 1).padStart(2, '0') + ' / ' + total;
+      prev.disabled = i <= 0;
+      next.disabled = i >= total - 1;
+      tick.style.width = (total > 1 ? (i / (total - 1)) * 100 : 0) + '%';
+    }
+    function goTo(i) {
+      i = Math.min(total - 1, Math.max(0, i));
+      book.scrollTo({ left: i * book.clientWidth, behavior: 'smooth' });
+    }
+    function go(d) { goTo(current() + d); }
+
+    prev.addEventListener('click', function () { go(-1); });
+    next.addEventListener('click', function () { go(1); });
+    book.addEventListener('scroll', function () { window.requestAnimationFrame(paint); },
+      { passive: true });
+    window.addEventListener('resize', paint);
+
+    /* ---------- jump palette ---------- */
+    var palette = document.getElementById('palette');
+    var paletteList = document.getElementById('palette-list');
+    var paletteFilter = document.getElementById('palette-filter');
+
+    function labelFor(page, i) {
+      if (i === 0) return 'Cover';
+      var rh = page.querySelector('.rh span');
+      if (rh && rh.textContent.trim()) return rh.textContent.trim();
+      var pt = page.querySelector('.part-title, .ch-title');
+      // innerText, not textContent: a <br> inside a title would otherwise join two words
+      return pt ? (pt.innerText || pt.textContent).replace(/\s+/g, ' ').trim()
+                : 'Page ' + (i + 1);
+    }
+    pages.forEach(function (p, i) {
+      var li = document.createElement('li');
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'jump';
+      b.innerHTML = '<span class="n">' + String(i + 1).padStart(2, '0') + '</span><span></span>';
+      b.lastChild.textContent = labelFor(p, i);
+      b.addEventListener('click', function () { setPalette(false); goTo(i); });
+      li.appendChild(b);
+      paletteList.appendChild(li);
+    });
+    function setPalette(open) {
+      palette.setAttribute('data-open', open ? 'true' : 'false');
+      if (open) { if (paletteFilter) { paletteFilter.value = ''; filterPalette(); paletteFilter.focus(); } }
+      else { count.focus(); }
+    }
+    function filterPalette() {
+      var q = (paletteFilter.value || '').toLowerCase().trim();
+      Array.prototype.forEach.call(paletteList.children, function (li) {
+        li.hidden = q ? li.textContent.toLowerCase().indexOf(q) === -1 : false;
+      });
+    }
+    if (paletteFilter) {
+      paletteFilter.addEventListener('input', filterPalette);
+      paletteFilter.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var first = Array.prototype.filter.call(paletteList.children, function (li) { return !li.hidden; })[0];
+        if (first) first.querySelector('button').click();
+      });
+    }
+    count.addEventListener('click', function () { setPalette(true); });
+    document.getElementById('palette-close').addEventListener('click', function () { setPalette(false); });
+
+    /* ---------- keyboard ---------- */
+    document.addEventListener('keydown', function (e) {
+      var open = palette.getAttribute('data-open') === 'true';
+      if (e.key === 'Escape' && open) { e.preventDefault(); setPalette(false); return; }
+      if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      if (open) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+      else if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+      else if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
+      else if (e.key === 'g' || e.key === 'G') { e.preventDefault(); setPalette(true); }
+    });
+
+    /* ---------- contents links ---------- */
+    document.querySelectorAll('.toc a').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        var el = document.getElementById(a.getAttribute('href').slice(1));
+        var idx = pages.indexOf(el);
+        if (idx >= 0) goTo(idx);
+      });
+    });
+
+    /* ---------- copy buttons on code blocks ---------- */
+    document.querySelectorAll('pre.code').forEach(function (pre) {
+      var wrap = document.createElement('div');
+      wrap.className = 'codewrap';
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'copy';
+      b.textContent = 'copy';
+      b.addEventListener('click', function () {
+        var text = pre.innerText;
+        var done = function () {
+          b.textContent = 'copied';
+          window.setTimeout(function () { b.textContent = 'copy'; }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () { b.textContent = 'failed'; });
+        } else {
+          // older engines: a hidden textarea is the only portable path
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); done(); } catch (err) { b.textContent = 'failed'; }
+          document.body.removeChild(ta);
+        }
+      });
+      wrap.appendChild(b);
+    });
+
+    /* ---------- self-scoring quizzes ---------- */
+    var LETTERS = ['a', 'b', 'c', 'd', 'e'];
+
+    document.querySelectorAll('form.quiz').forEach(function (form) {
+      var qs = Array.prototype.slice.call(form.querySelectorAll('li.q'));
+      var score = form.querySelector('.score');
+      var key = keyOf(form);
+
+      var was = store.q[key];
+      if (score && was) score.textContent = 'last time ' + was.r + ' of ' + was.n;
+
+      function grade() {
+        var right = 0, answered = 0;
+        qs.forEach(function (q) {
+          var picked = q.querySelector('input:checked');
+          q.classList.remove('ok', 'no');
+          q.classList.add('graded');
+          var v = q.querySelector('.verdict');
+          if (!picked) { if (v) v.textContent = 'unanswered'; return; }
+          answered++;
+          var correct = picked.value === q.getAttribute('data-answer');
+          q.classList.add(correct ? 'ok' : 'no');
+          if (correct) right++;
+          if (v) v.textContent = correct ? 'correct' : 'not quite';
+        });
+        if (score) {
+          score.textContent = right + ' of ' + qs.length + ' correct' +
+            (answered < qs.length ? ' · ' + (qs.length - answered) + ' unanswered' : '');
+        }
+        store.q[key] = { r: right, n: qs.length, ch: chapterOf(form) };
+        save();
+        renderReadiness();
+      }
+
+      function reset() {
+        qs.forEach(function (q) {
+          q.classList.remove('graded', 'ok', 'no');
+          var v = q.querySelector('.verdict'); if (v) v.textContent = '';
+          q.querySelectorAll('input').forEach(function (i) { i.checked = false; });
+        });
+        if (score) score.textContent = '';
+        delete store.q[key];
+        save();
+        renderReadiness();
+      }
+
+      form.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (btn.getAttribute('data-action') === 'check') grade(); else reset();
+        });
+      });
+    });
+
+    /* ---------- open drills: self-rating, restored on load ---------- */
+    document.querySelectorAll('.fr').forEach(function (fr) {
+      var id = fr.getAttribute('data-id');
+      var btns = Array.prototype.slice.call(fr.querySelectorAll('.rbtn[data-rate]'));
+      function paintRate() {
+        var v = id ? store.r[id] : null;
+        btns.forEach(function (b) {
+          b.setAttribute('aria-pressed', b.getAttribute('data-rate') === v ? 'true' : 'false');
+        });
+      }
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (!id) return;
+          var v = b.getAttribute('data-rate');
+          if (store.r[id] === v) delete store.r[id];          // pressing again clears it
+          else store.r[id] = v;
+          save(); paintRate(); renderReadiness();
+        });
+      });
+      if (id) {
+        fr.setAttribute('data-ch', chapterOf(fr));
+        paintRate();
+      }
+    });
+
+    /* ---------- flashcards ---------- */
+    document.querySelectorAll('ol.deck').forEach(function (deck) {
+      var cards = Array.prototype.slice.call(deck.querySelectorAll('li.card'));
+      var bar = deck.parentNode.querySelector('[data-deck-score]');
+
+      function paintDeck() {
+        var known = cards.filter(function (c) {
+          return store.k[c.getAttribute('data-id')];
+        }).length;
+        cards.forEach(function (c) {
+          var k = !!store.k[c.getAttribute('data-id')];
+          c.setAttribute('data-known', k ? 'true' : 'false');
+          var mk = c.querySelector('.rbtn[data-known]');
+          if (mk) mk.setAttribute('aria-pressed', k ? 'true' : 'false');
+        });
+        if (bar) bar.textContent = known + ' of ' + cards.length + ' marked known';
+      }
+
+      cards.forEach(function (c) {
+        var face = c.querySelector('.face');
+        if (face) face.addEventListener('click', function () {
+          c.setAttribute('data-flipped', c.getAttribute('data-flipped') === 'true' ? 'false' : 'true');
+        });
+        var mk = c.querySelector('.rbtn[data-known]');
+        if (mk) mk.addEventListener('click', function () {
+          var id = c.getAttribute('data-id');
+          if (store.k[id]) delete store.k[id]; else store.k[id] = 1;
+          save(); paintDeck(); renderReadiness();
+        });
+      });
+
+      var host = deck.parentNode;
+      host.querySelectorAll('[data-deck]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var what = btn.getAttribute('data-deck');
+          if (what === 'flip') {
+            var anyDown = cards.some(function (c) { return c.getAttribute('data-flipped') !== 'true'; });
+            cards.forEach(function (c) { c.setAttribute('data-flipped', anyDown ? 'true' : 'false'); });
+          } else {
+            cards.forEach(function (c) { delete store.k[c.getAttribute('data-id')]; });
+            save(); paintDeck(); renderReadiness();
+          }
+        });
+      });
+
+      paintDeck();
+    });
+
+    /* ---------- timed drills ---------- */
+    document.querySelectorAll('.timer').forEach(function (t) {
+      var minutes = parseInt(t.getAttribute('data-min') || '30', 10);
+      var clock = t.querySelector('.clock');
+      var startBtn = t.querySelector('[data-timer="start"]');
+      var left = minutes * 60;
+      var handle = null;
+
+      function show() {
+        var m = Math.floor(left / 60), s = left % 60;
+        clock.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        clock.setAttribute('data-done', left <= 0 ? 'true' : 'false');
+      }
+      function stop() {
+        if (handle) { window.clearInterval(handle); handle = null; }
+        if (startBtn) startBtn.textContent = left > 0 ? 'Start' : 'Done';
+      }
+      function tickDown() {
+        left -= 1;
+        if (left <= 0) { left = 0; show(); stop(); return; }
+        show();
+      }
+      if (startBtn) startBtn.addEventListener('click', function () {
+        if (handle) { stop(); startBtn.textContent = 'Resume'; return; }
+        if (left <= 0) return;
+        handle = window.setInterval(tickDown, 1000);
+        startBtn.textContent = 'Pause';
+      });
+      var resetBtn = t.querySelector('[data-timer="reset"]');
+      if (resetBtn) resetBtn.addEventListener('click', function () {
+        stop(); left = minutes * 60; show();
+        if (startBtn) startBtn.textContent = 'Start';
+      });
+      show();
+    });
+
+    /* ---------- answer key, generated from the questions ---------- */
+    var keyBox = document.getElementById('answer-key');
+    if (keyBox) {
+      var n = 0;
+      document.querySelectorAll('form.quiz li.q').forEach(function (q) {
+        n++;
+        var want = q.getAttribute('data-answer');
+        var idx = LETTERS.indexOf(want);
+        var s = document.createElement('span');
+        s.innerHTML = String(n).padStart(2, '0') + ' &nbsp; <b>' +
+          (idx >= 0 ? LETTERS[idx] : want) + '</b>';
+        keyBox.appendChild(s);
+      });
+      if (!n) keyBox.textContent = 'No practice questions in this book.';
+    }
+
+    /* ---------- readiness: read back everything the reader has done ----------
+       Chapters keep the order they appear in the book, so the meter reads as a route through
+       it rather than an alphabetical list. A chapter with nothing done says so instead of
+       reporting zero, since untouched and failed are different states. */
+    var readyBox = document.getElementById('readiness');
+    var chapterOrder = [];
+    var chapterData = {};
+
+    document.querySelectorAll('form.quiz').forEach(function (form) {
+      var ch = chapterOf(form);
+      if (!chapterData[ch]) { chapterData[ch] = { qn: 0, keys: [], frs: [] }; chapterOrder.push(ch); }
+      chapterData[ch].qn += form.querySelectorAll('li.q').length;
+      chapterData[ch].keys.push(keyOf(form));
+    });
+    document.querySelectorAll('.fr[data-id]').forEach(function (fr) {
+      var ch = fr.getAttribute('data-ch') || chapterOf(fr);
+      if (!chapterData[ch]) { chapterData[ch] = { qn: 0, keys: [], frs: [] }; chapterOrder.push(ch); }
+      chapterData[ch].frs.push(fr.getAttribute('data-id'));
+    });
+
+    var RATE_VALUE = { solid: 1, shaky: 0.5, miss: 0 };
+
+    function renderReadiness() {
+      if (!readyBox) return;
+      readyBox.textContent = '';
+      if (!chapterOrder.length) {
+        readyBox.innerHTML = '<p class="none">This book has no graded work.</p>';
+        return;
+      }
+      var gotAll = 0, ofAll = 0, touched = 0;
+
+      chapterOrder.forEach(function (ch) {
+        var d = chapterData[ch];
+        var got = 0, of = 0, did = false;
+
+        d.keys.forEach(function (k) {
+          var rec = store.q[k];
+          var qn = rec ? rec.n : 0;
+          if (rec) { got += rec.r; of += rec.n; did = true; }
+        });
+        // unanswered questions still count against the denominator once anything is attempted
+        if (did && of < d.qn) of = d.qn;
+
+        d.frs.forEach(function (id) {
+          var v = store.r[id];
+          of += 1;
+          if (v) { got += RATE_VALUE[v]; did = true; }
+        });
+        if (!did) of = d.qn + d.frs.length;
+
+        gotAll += got; ofAll += of;
+        if (did) touched++;
+
+        var pct = of ? Math.round((got / of) * 100) : 0;
+        var row = document.createElement('div');
+        row.className = 'row' + (did && pct >= 80 ? ' done' : '');
+        var nm = document.createElement('span');
+        nm.className = 'nm';
+        nm.innerHTML = ch;
+        var bar = document.createElement('span');
+        bar.className = 'bar';
+        var fill = document.createElement('i');
+        fill.style.width = (did ? pct : 0) + '%';
+        bar.appendChild(fill);
+        var st = document.createElement('span');
+        st.className = 'st';
+        st.textContent = did ? pct + '%' : 'not yet';
+        row.appendChild(nm); row.appendChild(bar); row.appendChild(st);
+        readyBox.appendChild(row);
+      });
+
+      var cardIds = Array.prototype.slice.call(document.querySelectorAll('li.card[data-id]'));
+      var known = cardIds.filter(function (c) { return store.k[c.getAttribute('data-id')]; }).length;
+
+      var totalPct = ofAll ? Math.round((gotAll / ofAll) * 100) : 0;
+      var t = document.createElement('div');
+      t.className = 'total';
+      t.innerHTML = '<span class="big">' + totalPct + '%</span><span>' +
+        touched + ' of ' + chapterOrder.length + ' sections attempted' +
+        (cardIds.length ? ' · ' + known + ' of ' + cardIds.length + ' cards known' : '') +
+        '</span>';
+      readyBox.appendChild(t);
+    }
+
+    var resetAll = document.getElementById('progress-reset');
+    if (resetAll) resetAll.addEventListener('click', function () {
+      store.q = {}; store.r = {}; store.k = {};
+      save();
+      document.querySelectorAll('.rbtn').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+      document.querySelectorAll('li.card').forEach(function (c) { c.setAttribute('data-known', 'false'); });
+      document.querySelectorAll('[data-deck-score]').forEach(function (s) {
+        var deck = s.parentNode.parentNode.querySelector('ol.deck');
+        var n = deck ? deck.querySelectorAll('li.card').length : 0;
+        s.textContent = '0 of ' + n + ' marked known';
+      });
+      document.querySelectorAll('form.quiz .score').forEach(function (s) { s.textContent = ''; });
+      renderReadiness();
+      var note = document.getElementById('progress-note');
+      if (note) note.textContent = 'cleared';
+    });
+
+    renderReadiness();
+    paint();
+  })();
+</script>
